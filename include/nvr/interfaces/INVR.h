@@ -1,0 +1,32 @@
+#pragma once:
+
+//NVR工厂类：
+class NVRFactory{
+public:
+    static std::unique_ptr<INVR> createNVR(const ConfigNVR& nvrConfig);
+}
+
+class INVR {
+public:
+    virtual ~IDevice() {}
+
+    virtual bool initSDK() = 0;
+    virtual bool deinitSDK() = 0;
+
+    virtual bool login(const std::string& ip, short port,
+               const std::string& user, const std::string& password) = 0;
+
+    virtual bool logout() = 0;
+
+    virtual void start(int channel,CameraInfo camera) = 0;
+
+    virtual void stop() = 0;
+
+    virtual bool forceIFrame(int channelId) = 0; // channel 是否已经 RealPlay
+
+    virtual bool getDeviceInfo(DeviceInfo& out) = 0;
+
+    virtual bool getSDKStatus() = 0;
+
+    virtual bool getNVRStatus()= 0;
+};

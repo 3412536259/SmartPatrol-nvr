@@ -10,53 +10,42 @@
 
 class IVideoService {
 public:
-    virtual ~IVideoService() = default;
-    virtual bool initialize() = 0;
-    virtual void startProcessing() = 0;
-    virtual void stopProcessing() = 0;
-    virtual bool isProcessing() const = 0;
-    virtual void setAlarmCallback(std::function<void(const std::vector<std::string>& detections,
-                                                   long timestamp)> callback) = 0;
-    virtual void setFrameCallback(std::function<void(const std::vector<uint8_t>& frame_data,
-                                                   int width, int height, long timestamp)> callback) = 0;
-    virtual void enableDetection(bool enabled) = 0;
-    virtual void startRecording() = 0;
-    virtual void stopRecording() = 0;
-    virtual bool isRecording() const = 0;
+   virtual  ~VideoService()  = 0;
+
+    virtual start() = 0;
+
+    virtual stop() = 0;
+
+    virtual getCameraStatus(videoDerviceStatusInfo& videoDerviceStatusInfo) = 0;//获取视频的设备状态（nvr 加上全部摄像头） //上面主动上传上去
+    
+    virtual viewCameraPreviewStream(const PreviewStream& previewStream,PreviewFrame& previewFrame) = 0; // 获取单个通道的最新预览帧
+
+    virtualVideoFrames getAllLastKeyFrames() = 0;
 };
 
 class VideoService : public IVideoService {
-public:
-    VideoService(int camera_id, int width, int height, int fps);
-    ~VideoService();
+    ~VideoService()override;
+    VideoService();
+
+    void start() override;
+
+    void stop() override;
+
+    bool getCameraStatus(videoDerviceStatusInfo& videoDerviceStatusInfo)override;//获取视频的设备状态（nvr 加上全部摄像头） //上面主动上传上去
     
-    bool initialize() override;
-    void startProcessing() override;
-    void stopProcessing() override;
-    bool isProcessing() const override;
-    void setAlarmCallback(std::function<void(const std::vector<std::string>& detections,
-                                           long timestamp)> callback) override;
-    void setFrameCallback(std::function<void(const std::vector<uint8_t>& frame_data,
-                                           int width, int height, long timestamp)> callback) override;
-    void enableDetection(bool enabled) override;
-    void startRecording() override;
-    void stopRecording() override;
-    bool isRecording() const override;
-    
+    bool viewCameraPreviewStream(const PreviewStream& previewStream,PreviewFrame& previewFrame) override; // 获取单个通道的最新预览帧
+
+    VideoFrames getAllLastKeyFrames() override;
 private:
-    void processingLoop();
-    void handleVideoFrame(const std::vector<uint8_t>& frame_data, int width, int height, long timestamp);
-    
-    int camera_id_;
-    int width_;
-    int height_;
-    int fps_;
-    std::thread processing_thread_;
-    std::atomic<bool> processing_{false};
-    std::atomic<bool> detection_enabled_{true};
-    std::atomic<bool> recording_{false};
-    std::function<void(const std::vector<std::string>&, long)> alarm_callback_;
-    std::function<void(const std::vector<uint8_t>&, int, int, long)> frame_callback_;
+    bool addCamera(const CameraListConfig& info);   //可能就是有业务需求的要移动走后的摄像头，重新添加到里面
+    bool removeCamera(const CameraListConfig& info); //可能就是有业务需求的要移动走
+    bool registerDevices();// 把摄像头都注册到这个map表里面，而且初始化SDK，还把NVR进行登陆
+    void startAllStreams();//启动所有的通道预览流
+private:
+    std::unique_ptr<IDevice> nvr_;
+    std::map<int, std::unique_ptr<Camera>> cameras_;  //摄像头的在线表（通道信息 + 状态 + 缓存帧）”）  通道号来进行
+    std::mutex mutex_; 
+    std::atomic_bool running_ = false;
 };
 
 #endif
