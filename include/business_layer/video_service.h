@@ -31,7 +31,7 @@ class VideoService : public IVideoService {
 
     void stop() override;
 
-    bool getCameraStatus(videoDerviceStatusInfo& videoDerviceStatusInfo)override;//获取视频的设备状态（nvr 加上全部摄像头） //上面主动上传上去
+    bool getCameraStatus(videoDerviceStatusInfo& out)override;//获取视频的设备状态（nvr 加上全部摄像头） //上面主动上传上去
     
     bool viewCameraPreviewStream(const PreviewStream& previewStream,PreviewFrame& previewFrame) override; // 获取单个通道的最新预览帧
 
@@ -45,7 +45,7 @@ private:
     std::unique_ptr<IDevice> nvr_;
     std::map<int, std::unique_ptr<Camera>> cameras_;  //摄像头的在线表（通道信息 + 状态 + 缓存帧）”）  通道号来进行
     std::mutex mutex_; 
-    std::atomic_bool running_ = false;
+    // std::atomic_bool running_ = false;
 };
 
 #endif

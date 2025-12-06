@@ -4,24 +4,50 @@
 #include "data_layer/video_data_object.h"
 
 #include <cstring>
-class Camera {//通道
+class Camera {//通道 //解码相应的H264/H265 帧 ，保存最新的帧（RGB）,
 public:
-    Camera(const CameraInfo& info) : info_(info) {}
+   Camera(const CameraInfo& info)
+        : info_(info), status_(CameraStatus::OFFLINE), codecCtx_(nullptr),
+          frameRGB_(nullptr), swsCtx_(nullptr) {
+        initDecoder(info.codecId);
+    }
+
+    ~Camera() {
+        std::lock_guard<std::mutex> lock(mtx_);
+        if (frameRGB_) av_frame_free(&frameRGB_);
+        if (codecCtx_) avcodec_free_context(&codecCtx_);
+        if (swsCtx_) sws_freeContext(swsCtx_);
+    }
+
     CameraStatus getStatus();
     // 你需要的业务
-    bool getLastKeyFrame(FrameData& out);
-    void saveKeyFrame(const uint8_t* Data, size_t len);//保存 I 帧
-    void onStreamHeader(uint8_t* data, size_t len);
+    bool getLastKeyFrame(FrameData& out);//得到最新帧
+
+    void onEncodedFrame(uint8_t* Data, size_t len);// 海康SDK回调来的编码帧
+
     
 private:
-    void updateKeyFrame(const FrameData& frame);
-    void updateStatus(CameraStatus status);
-private:
-    CameraInfo info_;  // 通道号、名称等
-    CameraStatus status_;    // 通道的运行和 没有运行
-    FrameData lastKeyFrame_; // NVR 拉到的关键帧（由 NVR SDK 写入）
+    void logFFmpegError(const char* func, int err);
 
+    bool initDecoder();
+
+    void updateKeyFrame(FrameData lastKeyFrame);
+
+    void updateStatus(CameraStatus status);
+
+private:
+    CameraInfo info_;
+    CameraStatus status_;
+
+    // 最新帧
+    FrameData lastKeyFrame_;//这个是保存帧的
     std::mutex frameMutex_;
+
+    // 解码器
+    AVCodecContext* codecCtx_;
+    AVFrame* frameRGB_;
+    SwsContext* swsCtx_;
+
     std::mutex statusMutex_; //运行和不运行
     friend class HKVDevice;  // 允许 NVR 层直接写入缓存（仅该类允许）
 };
@@ -47,7 +73,7 @@ public:
 
     bool stop(int channel,Camera* camera)override;
 
-    bool forceIFrame(int channelId) override; // channel 是否已经 RealPlay
+    // bool forceIFrame(int channelId) override; // channel 是否已经 RealPlay
 
     bool getDeviceInfo(DeviceInfo& info) override;
 
@@ -55,7 +81,7 @@ public:
 
     bool getNVRStatus(){return nvrInited_;}
 private:
-    void pullKeyFrameLoop();
+    // void pullKeyFrameLoop();
     static void CALLBACK onHKFrameCallback(LONG lRealHandle, DWORD dwDataType, BYTE* pBuffer, DWORD dwBufSize,DWORD dwUser) ; // SDK回调函数
     Camera* findCameraByChannel(int channel);//根据这个channel来进行相关的
     bool bindCamera(Camera* camera);  // 注册 Camera

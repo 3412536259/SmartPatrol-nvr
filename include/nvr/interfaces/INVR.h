@@ -20,7 +20,7 @@ public:
 
     virtual void start(int channel,CameraInfo camera) = 0;
 
-    virtual void stop() = 0;
+    virtual void stop(int channel,CameraInfo camera) = 0;
 
     virtual bool forceIFrame(int channelId) = 0; // channel 是否已经 RealPlay
 

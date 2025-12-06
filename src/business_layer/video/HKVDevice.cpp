@@ -68,7 +68,7 @@ bool HKVDevice::start(int channel, Camera* camera){
     // 1.camera 放在 运行表里面
    
     auto it = channels_.find(channel);
-    if(it != channels_.end() && it->second.realHandle >= 0){
+    if(it != channels_.end() && it->second.realHandle > 0){
         return true;
     }
     ChannelContext& ctx = channels_[channel];
@@ -78,7 +78,7 @@ bool HKVDevice::start(int channel, Camera* camera){
     NET_DVR_PREVIEWINFO previewInfo = {0};
     previewInfo.lChannel = channel;          // 通道号（从33开始）
     previewInfo.dwStreamType = 0;            // 1-子码流（0-主码流）
-    previewInfo.dwLinkMode = 1;              // 0-TCP方式
+    previewInfo.dwLinkMode = 0;              // 0-TCP方式
     previewInfo.hPlayWnd = 0;          // 不需要SDK解码显示，设为nullptr
     previewInfo.bBlocked = 0;                // 非阻塞模式
 
@@ -91,25 +91,48 @@ bool HKVDevice::start(int channel, Camera* camera){
     if (streamHandle < 0){
         ctx.realHandle = -1;
         ctx.camera->updateStatus(CameraStatus::OFFLINE);
+        int err = NET_DVR_GetLastError();
         //日志
+        std::cout << "HKVDevice::start 错误原因:" << err << std::endl;//日志
     }
 
     // 3. 每一个通道的 视频句柄 放在 运行表里面
-    ctx.realHandle = realHandle;
+    ctx.realHandle = streamHandle;
+    camera->updateStatus(CameraStatus::RUNNING);
+    return true;
+}
+
+bool HKVDevice::stop(int channel, Camera* camera){
+    std::lock_guard<std::mutex> lock(ctxMutex_);
+    if(!sdkInited_ || !nvrInited_){
+        return false;
+    }
+    auto it = channels_.find[channel];
+    if(it == channels_.end() && it->second.realHandle < 0){
+        return true;
+    }
+    ChannelContext& ctx = channel[channel];
+    ctx.camera = camera;
+    ret =  NET_DVR_StopRealPlay(ctx.realHandle);
+    if(ret <= 0){
+        int err = NET_DVR_GetLastError();
+        std::cout << "HKVDevice::start 错误原因:" << err << std::endl;//日志
+        return false;
+    }
+    ctx.realHandle = -1;
     camera->updateStatus(CameraStatus::ONLINE);
     return true;
 }
 
-bool HKVDevice::stop(){
-
-}
 // private
 void CALLBACK HKVDevice::OnPreviewCallback(LONG lRealHandle, DWORD dwDataType, BYTE* pBuffer, DWORD dwBufSize,void *dwUser){
+    
     Camera* camera = static_cast<Camera*>(dwUser);//reinterpret_cast
+    NET_DVR_MakeKeyFrame(userId_,info_.channel)
     if (!camera) return;
     if(dwDataType == NET_NVR_STREAMDATA){
         if(isIFrame(pBuffer,dwBufSize)){
-            camera->saveKeyFrame(pBuffer, dwBufSize);
+            camera->onEncodedFrame(pBuffer, dwBufSize); //把这个帧
         }
     }
 }
@@ -154,3 +177,4 @@ bool HKVDevice::isIFrame(const uint8_t* data, int len){
 
     return false;
 }
+
