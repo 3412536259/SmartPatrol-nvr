@@ -7,7 +7,7 @@ CameraStatus Camera::getStatus() {
 
 bool Camera::getLastKeyFrame(FrameData& out) {
     std::lock_guard<std::mutex> lock(frameMutex_);
-    if (!lastKeyFrame_.decoded) return false;
+    if (!lastKeyFrame_.frame) return false;
     out = lastKeyFrame_;
     return true;
 }
@@ -55,10 +55,10 @@ void Camera::onEncodedFrame(uint8_t* data, size_t len) {
 
     // 保存最新帧
     FrameData fd;
-    fd.decoded = std::shared_ptr<AVFrame>(rgbFrame, [](AVFrame* f) { av_frame_free(&f); });
+    fd.frame = std::shared_ptr<AVFrame>(rgbFrame, [](AVFrame* f) { av_frame_free(&f); });
     fd.width = frameRGB_->width;
     fd.height = frameRGB_->height;
-    fd.timestampMs = timestampMs; //TODO这个 
+    // fd.timestampMs = timestampMs; //TODO这个 
 
     {
         std::lock_guard<std::mutex> lock(frameMutex_);

@@ -1,14 +1,18 @@
-#pragma once:
+#pragma once
 
+#include <memory>
+#include "data_layer/config_parser.h"
+#include "data_layer/video_data_object.h"
+class INVR;
 //NVR工厂类：
 class NVRFactory{
 public:
-    static std::unique_ptr<INVR> createNVR(const ConfigNVR& nvrConfig);
-}
+    static std::unique_ptr<INVR> createNVR(const NVRConfig& nvrConfig);
+};
 
 class INVR {
 public:
-    virtual ~IDevice() {}
+    virtual ~INVR() = default;
 
     virtual bool initSDK() = 0;
     virtual bool deinitSDK() = 0;
@@ -18,15 +22,15 @@ public:
 
     virtual bool logout() = 0;
 
-    virtual void start(int channel,CameraInfo camera) = 0;
+    virtual bool start(int channel,Camera* camera) = 0;
 
-    virtual void stop(int channel,CameraInfo camera) = 0;
+    virtual bool stop(int channel,Camera* camera) = 0;
 
-    virtual bool forceIFrame(int channelId) = 0; // channel 是否已经 RealPlay
+    // virtual bool forceIFrame(int channelId) = 0; // channel 是否已经 RealPlay
 
-    virtual bool getDeviceInfo(DeviceInfo& out) = 0;
+    // virtual bool getDeviceInfo(DeviceInfo& out) = 0;
 
     virtual bool getSDKStatus() = 0;
 
-    virtual bool getNVRStatus()= 0;
+    virtual bool getNVRStatus() = 0;
 };

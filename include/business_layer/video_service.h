@@ -1,5 +1,4 @@
-#ifndef VIDEO_SERVICE_H
-#define VIDEO_SERVICE_H
+#pragma once
 
 #include <memory>
 #include <thread>
@@ -7,45 +6,58 @@
 #include <functional>
 #include <vector>
 #include <string>
+#include "nvr/branks/hikvision/hikDevice.h"
+#include "data_layer/video_data_object.h"
+#include "nvr/interfaces/INVR.h"
+class PreviewStream;
+class PreviewFrame;
+class VideoFrames;
 
 class IVideoService {
 public:
-   virtual  ~VideoService()  = 0;
+    virtual ~IVideoService() = default;
 
-    virtual start() = 0;
+    virtual void start() = 0;
 
-    virtual stop() = 0;
+    virtual void stop() = 0;
 
-    virtual getCameraStatus(videoDerviceStatusInfo& videoDerviceStatusInfo) = 0;//获取视频的设备状态（nvr 加上全部摄像头） //上面主动上传上去
+    virtual bool getDeviceStatus(VideoDerviceStatusInfo& videoDerviceStatusInfo) = 0;//获取视频的设备状态（nvr 加上全部摄像头） //上面主动上传上去
     
-    virtual viewCameraPreviewStream(const PreviewStream& previewStream,PreviewFrame& previewFrame) = 0; // 获取单个通道的最新预览帧
+    virtual bool viewCameraPreviewStream(const PreviewStream& in,PreviewFrame& out) = 0; // 获取单个通道的最新预览帧
 
-    virtualVideoFrames getAllLastKeyFrames() = 0;
+    virtual bool getAllLastKeyFrames(VideoFrames& out) = 0;
 };
 
 class VideoService : public IVideoService {
+public:   
     ~VideoService()override;
     VideoService();
 
     void start() override;
 
     void stop() override;
-
-    bool getCameraStatus(videoDerviceStatusInfo& out)override;//获取视频的设备状态（nvr 加上全部摄像头） //上面主动上传上去
     
-    bool viewCameraPreviewStream(const PreviewStream& previewStream,PreviewFrame& previewFrame) override; // 获取单个通道的最新预览帧
+    bool getDeviceStatus(VideoDerviceStatusInfo& out)override;//获取视频的设备状态（nvr 加上全部摄像头） //上面主动上传上去
+    
+    bool viewCameraPreviewStream(const PreviewStream& in,PreviewFrame& out) override; // 获取单个通道的最新预览帧
 
-    VideoFrames getAllLastKeyFrames() override;
+    bool getAllLastKeyFrames(VideoFrames& out) override;
 private:
-    bool addCamera(const CameraListConfig& info);   //可能就是有业务需求的要移动走后的摄像头，重新添加到里面
-    bool removeCamera(const CameraListConfig& info); //可能就是有业务需求的要移动走
+    bool addCamera(const CameraInfo& info);   //可能就是有业务需求的要移动走后的摄像头，重新添加到里面
+    bool removeCamera(const CameraInfo& info); //可能就是有业务需求的要移动走
     bool registerDevices();// 把摄像头都注册到这个map表里面，而且初始化SDK，还把NVR进行登陆
     void startAllStreams();//启动所有的通道预览流
 private:
-    std::unique_ptr<IDevice> nvr_;
+    std::unique_ptr<INVR> nvr_;
     std::map<int, std::unique_ptr<Camera>> cameras_;  //摄像头的在线表（通道信息 + 状态 + 缓存帧）”）  通道号来进行
     std::mutex mutex_; 
-    // std::atomic_bool running_ = false;
+    std::atomic_bool running_;
 };
 
-#endif
+
+
+
+
+
+
+

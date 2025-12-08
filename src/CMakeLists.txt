@@ -3,9 +3,14 @@ project(src)
 
 
 set(SRC_FILES
-    main.cpp
+    #main.cpp
+    text/video_text.cpp
 
-  
+    data_layer/ConfigParser.cpp
+    data_layer/Camera.cpp
+    business_layer/video/HKVDevice.cpp
+    business_layer/video/VideoService.cpp
+
 )
 
 add_executable(main ${SRC_FILES})
@@ -24,7 +29,7 @@ pkg_check_modules(FFMPEG REQUIRED libavformat libavcodec libavutil libswscale)
 target_include_directories(main PUBLIC
     # 项目自有头文件路径
     ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/inlcude
+    ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/lib
 
 
