@@ -120,8 +120,8 @@ int main() {
         // ========== 步骤4：获取设备状态（并等待设备就绪） ==========
         std::cout << "\n【步骤4】获取设备状态并等待设备就绪..." << std::endl;
         VideoDerviceStatusInfo deviceStatus;
-        const int DEVICE_READY_RETRY = 10;  // 最大重试20次
-        const int DEVICE_READY_INTERVAL = 1000;  // 每次间隔1秒
+        const int DEVICE_READY_RETRY = 5;  // 最大重试20次
+        const int DEVICE_READY_INTERVAL = 7*1000;  // 每次间隔1秒
         bool deviceReady = false;
         
         for (int i = 0; i < DEVICE_READY_RETRY; ++i) {
@@ -156,6 +156,8 @@ int main() {
             videoService->stop();
             return -1;
         }
+        std::cout << "\n⚠️  等待拉流预热，生成有效帧数据..." << std::endl;
+        std::this_thread::sleep_for(std::chrono::seconds(3)); // 3秒预热
 
         // ========== 步骤5：获取单个摄像头预览帧（带重试） ==========
         std::cout << "\n【步骤5】获取摄像头预览帧（NVR:5, Camera:2）..." << std::endl;
@@ -167,7 +169,7 @@ int main() {
         // 绑定成员函数：std::bind 适配 getFrameWithRetry 的函数参数要求
         auto previewFunc = std::bind(&IVideoService::viewCameraPreviewStream, videoService.get(), 
                                      std::placeholders::_1, std::placeholders::_2);
-        bool previewGot = getFrameWithRetry("预览帧", previewReq, previewFrame, previewFunc, 10, 500);
+        bool previewGot = getFrameWithRetry("预览帧", previewReq, previewFrame, previewFunc, DEVICE_READY_RETRY, DEVICE_READY_INTERVAL);
         if (previewGot) {
             printFrameInfo(previewFrame, "预览");
         }

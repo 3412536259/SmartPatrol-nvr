@@ -211,7 +211,7 @@ void HKVDevice::pullRealPlayLoop(int channel){
         channels_[channel].realHandle = streamHandle;
         channels_[channel].camera->keyframeRequested = false;
         channels_[channel].camera->firstFrameReceived = false;
-        channels_[channel].camera->firstFrameDeadline = av_gettime_relative() + 5 * 1000 * 1000; // 5 秒后
+        channels_[channel].camera->firstFrameDeadline = av_gettime_relative() + 2 * 1000 * 1000; // 5 秒后
     }
 
     // if (streamHandle < 0){

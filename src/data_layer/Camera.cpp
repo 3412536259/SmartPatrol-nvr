@@ -67,7 +67,7 @@ void Camera::onEncodedFrame(uint8_t* data, size_t len) {
 }
 
 bool Camera::initDecoder() {
-    const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_H264);
+    const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_HEVC);
     if (!codec) {
         std::cerr << "Failed to find decoder" << std::endl;
         return false;
