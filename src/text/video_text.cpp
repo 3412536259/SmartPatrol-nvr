@@ -1,5 +1,5 @@
-#include "data_layer/config_parser.h"
-#include "business_layer/video_service.h"
+#include "config_parser.h"
+#include "video_service.h"
 
 #include <iostream>
 #include <chrono>
@@ -38,7 +38,7 @@ void printFrameInfo(const PreviewFrame& frame, const std::string& frameType) {
     
     const auto& frameData = frame.getFrame();
     std::cout << "帧分辨率: " << frameData.width << "x" << frameData.height << std::endl;
-    std::cout << "帧时间戳: " << frameData.timestampMs << " ms" << std::endl;
+    std::cout << "帧时间戳: " << frameData.lastKeyFrameTime << " ms" << std::endl;
     std::cout << "AVFrame 指针: " << frameData.frame.get() << std::endl;
     std::cout << "====================" << std::endl;
 }
@@ -46,17 +46,18 @@ void printFrameInfo(const PreviewFrame& frame, const std::string& frameType) {
 // 测试工具函数：打印所有关键帧信息
 void printAllKeyFrames(const VideoFrames& frames) {
     std::cout << "\n=== 所有摄像头关键帧信息 ===" << std::endl;
-    const auto& frameMap = frames.getFrames();
-    std::cout << "关键帧总数: " << frameMap.size() << std::endl;
+    const auto& frameVec = frames.getFrames();  // 改为vector
+    std::cout << "关键帧总数: " << frameVec.size() << std::endl;
     
-    for (const auto& framePair : frameMap) {
-        int camId = framePair.first;
-        const FrameData& frameData = framePair.second;
+    // 遍历vector（替代原Map遍历）
+    for (size_t i = 0; i < frameVec.size(); ++i) {
+        const VideoFrame& videoFrame = frameVec[i];
+        const FrameData& frameData = videoFrame.getFrameData();
         
-        std::cout << "摄像头 ID: " << camId << std::endl;
-        std::cout << "  分辨率: " << frameData.width << "x" << frameData.height << std::endl;
-        std::cout << "  时间戳: " << frameData.timestampMs << " ms" << std::endl;
-        std::cout << "  AVFrame 指针: " << frameData.frame.get() << std::endl;
+        std::cout << "[" << i+1 << "] 摄像头 ID: " << videoFrame.getCameraId() << std::endl;
+        std::cout << "      分辨率: " << frameData.width << "x" << frameData.height << std::endl;
+        std::cout << "      时间戳: " << frameData.lastKeyFrameTime << " ms" << std::endl;
+        std::cout << "      AVFrame 指针: " << frameData.frame.get() << std::endl;
     }
     std::cout << "============================" << std::endl;
 }
@@ -95,7 +96,7 @@ int main() {
         // ========== 步骤1：加载配置文件 ==========
         std::cout << "【步骤1】加载配置文件..." << std::endl;
         bool configLoaded = ConfigParser::getInstance().loadFromFile(
-            "/home/ztl/workspace/SmartPatrol-nvr/config/config.json"
+            "/home/ztl/workspace/SmartPatrol-nvr/include/common/config/config.json"
         );
         if (!configLoaded) {
             std::cerr << "配置文件加载失败！请检查路径或文件格式。" << std::endl;
@@ -162,9 +163,9 @@ int main() {
         // ========== 步骤5：获取单个摄像头预览帧（带重试） ==========
         std::cout << "\n【步骤5】获取摄像头预览帧（NVR:5, Camera:2）..." << std::endl;
         PreviewStream previewReq;
-        previewReq.setNvrId(5);     
-        previewReq.setCameraId(2);  
-        
+        previewReq.setNvrId("nvr_001");     
+        previewReq.setCameraId("2");  
+        std::cout<<"CameraId+ "<<previewReq.getCameraId()<<std::endl;
         PreviewFrame previewFrame;
         // 绑定成员函数：std::bind 适配 getFrameWithRetry 的函数参数要求
         auto previewFunc = std::bind(&IVideoService::viewCameraPreviewStream, videoService.get(), 

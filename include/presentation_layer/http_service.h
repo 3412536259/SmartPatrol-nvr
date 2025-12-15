@@ -1,117 +1,114 @@
-#ifndef HTTP_SERVICE_H
-#define HTTP_SERVICE_H
+#ifndef WEB_SERVICE_H
+#define WEB_SERVICE_H
 
 #include <string>
-#include <vector>
-#include <memory>
-#include <functional>
-#include <map>
-#include "business_layer/sensor_service.h"
-#include "business_layer/video_service.h"
-#include "business_layer/interaction_service.h"
+#include <thread>
+#include <cstdint>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <iostream>
+#include "icommand_dispatcher.h"
+#include "job_scheduler.h"
+#include "../../lib/json/json.hpp"
+#include "task.h"
 
-// 前向声明
-class SensorService;
-class VideoService;
-class InteractionService;
+// 前置声明（避免头文件循环依赖）
+class HTTPCommandController;
+class Httpconfig;
 
-class HTTPService {
+/**
+ * @brief Web服务接口类
+ * 提供基于TCP的HTTP JSON接口服务，处理客户端的JSON请求并返回JSON响应
+ */
+class WebService {
 public:
-    struct HttpRequest {
-        std::string method;
-        std::string path;
-        std::string body;
-        std::map<std::string, std::string> headers;
-        std::map<std::string, std::string> query_params;  // 新增：查询参数
-    };
+    /**
+     * @brief 构造函数
+ 
+     * @param ICommandDispatcher 任务调度接口指针
+     */
+    WebService(const std::string httpPath, ICommandDispatcher* dispatcher);
 
-    struct HttpResponse {
-        int status_code;
-        std::string body;
-        std::string content_type;
-        
-        HttpResponse(int code = 200, const std::string& content = "", 
-                    const std::string& type = "application/json") 
-            : status_code(code), body(content), content_type(type) {}
-    };
+    /**
+     * @brief 析构函数
+     * 自动停止服务并释放资源
+     */
+    ~WebService();
 
-    // 上传数据结构
-    struct ImageData {
-        std::vector<uint8_t> data;
-        std::string format;  // "jpg", "png"等
-        std::string timestamp;
-    };
-
-    struct SensorData {
-        std::string type;
-        std::string value;
-        std::string timestamp;
-    };
-
-public:
-    HTTPService(std::shared_ptr<SensorService> sensor_service,
-                std::shared_ptr<VideoService> video_service,
-                std::shared_ptr<InteractionService> interaction_service);
-    ~HTTPService();
-    
-    // 服务器管理
-    bool initialize(int port = 8080);
+    /**
+     * @brief 启动Web服务
+     * @return 启动成功返回true，失败返回false
+     */
     bool start();
-    bool stop();
-    bool isRunning() const;
-    
-    // ========== 主动上传功能 - 业务层主动调用 ==========
-    bool uploadImage(const ImageData& image_data);
-    bool uploadSensorData(const SensorData& sensor_data);
-    bool uploadEvent(const std::string& event_type, const std::string& event_data);
-    
-    // ========== 批量上传功能 ==========
-    bool uploadImages(const std::vector<ImageData>& images);
-    bool uploadSensorDataBatch(const std::vector<SensorData>& sensor_data_list);
+
+    /**
+     * @brief 停止Web服务
+     * 停止监听、关闭套接字、等待工作线程退出
+     */
+    void stop();
+
+    // 禁用拷贝构造和赋值运算符（避免线程和套接字资源拷贝问题）
+    WebService(const WebService&) = delete;
+    WebService& operator=(const WebService&) = delete;
+
+    // 禁用移动构造和赋值运算符（可选，根据实际需求）
+    WebService(WebService&&) = delete;
+    WebService& operator=(WebService&&) = delete;
 
 private:
-    // 依赖的业务层服务
-    std::shared_ptr<SensorService> sensor_service_;
-    std::shared_ptr<VideoService> video_service_;
-    std::shared_ptr<InteractionService> interaction_service_;
+    /**
+     * @brief 服务运行循环
+     * 持续监听客户端连接，处理新连接的接收
+     */
+    void run();
+
+    /**
+     * @brief 处理单个客户端连接
+     * @param client_fd 客户端套接字描述符
+     */
+    void handleClient(int client_fd);
+
+    // 成员变量
+    std::string m_bind_ip;
+    ICommandDispatcher* dispatcher_;      // 控制器实例（处理业务逻辑）                        // 监听端口
+    int m_server_fd = -1;                // 服务端套接字描述符（初始化为无效值）
+    std::atomic<bool> m_running;          // 服务运行状态标志
+    std::thread m_thread;                // 服务运行线程
+    uint16_t m_port = 8080;
     
-    // ========== API请求处理器 - HTTP请求触发 ==========
-    // 门锁控制
-    HttpResponse handleDoorLock(const HttpRequest& request);
-    HttpResponse handleDoorLockStatus(const HttpRequest& request);
-    
-    // 报警控制
-    HttpResponse handleAlarmControl(const HttpRequest& request);
-    HttpResponse handleAlarmStatus(const HttpRequest& request);
-    
-    // 摄像头控制
-    HttpResponse handleCameraControl(const HttpRequest& request);
-    HttpResponse handleCameraStatus(const HttpRequest& request);
-    
-    // 传感器相关
-    HttpResponse handleSensorStatus(const HttpRequest& request);
-    HttpResponse handleSensorHistory(const HttpRequest& request);
-    
-    // 视频流相关
-    HttpResponse handleVideoStream(const HttpRequest& request);
-    HttpResponse handleVideoRecord(const HttpRequest& request);
-    
-    // 图片相关
-    HttpResponse handleImageUpload(const HttpRequest& request);  // HTTP上传
-    HttpResponse handleImageQuery(const HttpRequest& request);
-    
-    // 系统状态
-    HttpResponse handleSystemStatus(const HttpRequest& request);
-    HttpResponse handleSystemConfig(const HttpRequest& request);
-    
-    // 工具方法
-    std::string generateTimestamp() const;
-    bool validateImageData(const ImageData& data) const;
-    bool validateSensorData(const SensorData& data) const;
-    
-    // 内部实现
-    class Impl;
-    std::unique_ptr<Impl> impl_;
 };
 
-#endif
+class JobScheduler;
+/**
+ * @brief Web控制器接口类
+ * 处理JSON请求的业务逻辑，与WebService解耦
+ */
+class HTTPCommandController : public ICommandDispatcher{
+public:
+    
+    explicit HTTPCommandController(JobScheduler& scheduler);
+
+    
+    /**
+     * @brief 处理JSON请求
+     * @param topic 处理请求
+     * @return payload 响应数据
+     */
+    void onMessage(const std::string& topic, const std::string& payload) override;
+
+private:
+    JobScheduler& scheduler_;
+
+    void handleGetRealImage(const nlohmann::json& j);
+    void handleGetSensorData(const nlohmann::json& j);
+    void handleGetAllDeviceStatus(const nlohmann::json& j);
+
+    void handleHistoryVideo(const nlohmann::json& j);
+
+    void handDownRecordFile(const nlohmann::json& j);
+
+
+};
+
+
+#endif // WEB_SERVICE_H

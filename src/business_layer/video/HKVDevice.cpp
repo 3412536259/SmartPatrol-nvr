@@ -1,5 +1,5 @@
-#include "nvr/branks/hikvision/hikDevice.h"
-#include "nvr/interfaces/INVR.h"
+#include "hikvision/hikDevice.h"
+#include "INVR.h"
 // public
 
 std::unique_ptr<INVR> NVRFactory::createNVR(const NVRConfig& nvrConfig){
@@ -13,6 +13,33 @@ std::unique_ptr<INVR> NVRFactory::createNVR(const NVRConfig& nvrConfig){
 }
 
 bool HKVDevice::initSDK() {
+    // ========== 核心：配置项目内的OpenSSL库路径 ==========
+    // 1. libcrypto（对应NET_SDK_INIT_CFG_LIBEAY_PATH）
+    const char* libeay_path = "/home/ztl/workspace/SmartPatrol-nvr/lib/nvr/branks/hikvision/libcrypto.so.1.1";
+    // 2. libssl（对应NET_SDK_INIT_CFG_SSLEAY_PATH，先确认同目录下是否有libssl.so.1.1）
+    const char* ssleay_path = "/home/ztl/workspace/SmartPatrol-nvr/lib/nvr/branks/hikvision/libssl.so.1.1";
+
+    // 检查库文件是否存在（可选，调试用）
+    if (access(libeay_path, F_OK) == -1) {
+        printf("libcrypto库不存在：%s\n", libeay_path);
+        return -1;
+    }
+    if (access(ssleay_path, F_OK) == -1) {
+        printf("libssl库不存在：%s，尝试用系统库替代\n", ssleay_path);
+        ssleay_path = "/usr/lib/aarch64-linux-gnu/libssl.so.1.1"; // 系统库兜底
+    }
+
+    // ========== 设置SDK初始化参数 ==========
+    // 配置OpenSSL加密库路径
+    NET_DVR_SetSDKInitCfg(NET_SDK_INIT_CFG_LIBEAY_PATH, (void*)libeay_path);
+    // 配置OpenSSL通信库路径
+    NET_DVR_SetSDKInitCfg(NET_SDK_INIT_CFG_SSLEAY_PATH, (void*)ssleay_path);
+
+    // （可选）设置SDK自身库加载路径（如果HCNetSDK.so在同目录）
+    NET_DVR_LOCAL_SDK_PATH sdk_path = {0};
+    strncpy(sdk_path.sPath, "/home/ztl/workspace/SmartPatrol-nvr/lib/nvr/branks/hikvision/", sizeof(sdk_path.sPath)-1);
+    NET_DVR_SetSDKInitCfg(NET_SDK_INIT_CFG_SDK_PATH, &sdk_path);
+
     // 1. 初始化海康SDK
     if (!NET_DVR_Init()) {
         int err = NET_DVR_GetLastError();
@@ -69,7 +96,6 @@ bool HKVDevice::login(const std::string& ip, short port, const std::string& user
         std::cerr << "[HKVDevice::login] SDK 未初始化，无法执行登录操作" << std::endl;
         return false;
     }
-
     // 2. 参数合法性检查
     if (ip.empty() || port <= 0 || user.empty() || password.empty()) {
         std::cerr << "[HKVDevice::login] 登录参数无效（IP/端口/用户名/密码为空）" << std::endl;
@@ -139,7 +165,7 @@ bool HKVDevice::logout() {
 
 bool HKVDevice::start(int channel, Camera* camera){
     std::lock_guard<std::mutex> lock(ctxMutex_);
-    std::cout << "检查摄像头在线表"<<std::endl;
+    // std::cout << "检查摄像头在线表"<<std::endl;
     // 1.camera 放在 运行表里面
     auto it = channels_.find(channel);
     if(it != channels_.end() && it->second.realHandle > 0){
@@ -160,7 +186,7 @@ bool HKVDevice::stop(int channel, Camera* camera){
         return false;
     }
     auto it = channels_.find(channel);
-    if(it == channels_.end() && it->second.realHandle < 0){
+    if(it == channels_.end() || it->second.realHandle < 0){
         return true;
     }
     ChannelContext& ctx = channels_[channel];
@@ -172,7 +198,6 @@ bool HKVDevice::stop(int channel, Camera* camera){
     if(ret <= 0){
         int err = NET_DVR_GetLastError();
         std::cout << "HKVDevice::start 错误原因:" << err << std::endl;//日志
-        return false;
     }
     ctx.realHandle = -1;
     camera->updateStatus(CameraStatus::OFFLINE);
@@ -183,50 +208,60 @@ bool HKVDevice::stop(int channel, Camera* camera){
 
 // private
 void HKVDevice::pullRealPlayLoop(int channel){
-    
+    ChannelContext* ctx = nullptr;
     {
         std::lock_guard<std::mutex> lock(ctxMutex_);
         if (!sdkInited_ || !nvrInited_) {
             return;
         }
+        auto it = channels_.find(channel);
+        if (it == channels_.end()) {
+            std::cerr << "[HKV] Channel " << channel << " not found in context map" << std::endl;
+            return;
+        }
+        ctx = &(it->second);
+
+
     }
-    std::cout << "开始进行拉流channel "<< channel << std::endl;
+    // NET_DVR_MakeKeyFrame(userId_, channel);
+    // std::cout << "开始进行拉流channel "<< channel << std::endl;
     NET_DVR_PREVIEWINFO previewInfo = {0};
     previewInfo.lChannel = channel;          // 通道号（从33开始）
     previewInfo.dwStreamType = 0;            // 1-子码流（0-主码流）
     previewInfo.dwLinkMode = 0;              // 0-TCP方式
     previewInfo.hPlayWnd = 0;          // 不需要SDK解码显示，设为nullptr
     previewInfo.bBlocked = 0;                // 非阻塞模式
+    previewInfo.byProtoType = 0;
+
 
     int streamHandle = NET_DVR_RealPlay_V40(
         userId_,                // 登录句柄
         &previewInfo,                        // 预览参数
-        HKVDevice::onHKFrameCallback,      // 4.注册回调函数把值给Camera
-        this                               // 传递当前实例指针
+        NULL,      // 4.注册回调函数把值给Camera
+        NULL                               // 传递当前实例指针
     );
-    
     {
         std::lock_guard<std::mutex> lock(ctxMutex_);
-
+        // std::cout << "streamHandle+" << streamHandle << "channel+" << channel << std::endl;
+        if (streamHandle < 0){
+            channels_[channel].realHandle = -1;
+            channels_[channel].camera->updateStatus(CameraStatus::OFFLINE);
+            int err = NET_DVR_GetLastError();
+            //日志
+            std::cout << "HKVDevice::start 错误原因:" << err << std::endl;//日志
+            return;
+        }
         channels_[channel].realHandle = streamHandle;
-        channels_[channel].camera->keyframeRequested = false;
-        channels_[channel].camera->firstFrameReceived = false;
-        channels_[channel].camera->firstFrameDeadline = av_gettime_relative() + 2 * 1000 * 1000; // 5 秒后
     }
 
-    // if (streamHandle < 0){
-    //     channels_[channel].realHandle = -1;
-    //     channels_[channel].camera->updateStatus(CameraStatus::OFFLINE);
-    //     int err = NET_DVR_GetLastError();
-    //     //日志
-    //     std::cout << "HKVDevice::start 错误原因:" << err << std::endl;//日志
-    // }
-
-    while(true){
+    int esCallbackRet = NET_DVR_SetESRealPlayCallBack(streamHandle,HKVDevice::onHKFrameCallback,ctx);
+    
+    while(true)
+    {   
+       
          {
             std::lock_guard<std::mutex> lock(ctxMutex_);
-            if (!channels_[channel].running)
-                break;
+            if (!channels_[channel].running) break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
@@ -234,100 +269,88 @@ void HKVDevice::pullRealPlayLoop(int channel){
 }   
 
 
-int HKVDevice::getUserId(){
-    return userId_;
-}
-
-
-void CALLBACK HKVDevice::onHKFrameCallback(LONG lRealHandle, DWORD dwDataType, BYTE* pBuffer, DWORD dwBufSize,void *dwUser){
-    if (dwUser == nullptr) {
+void CALLBACK HKVDevice::onHKFrameCallback(LONG lPreviewHandle, NET_DVR_PACKET_INFO_EX *pstruPackInfo, void *pUser)
+{
+    if (pUser == nullptr) {
         std::cerr << "onHKFrameCallback: dwUser is null!" << std::endl;
         return;
     }
-    // 2. 转换为HKVDevice实例指针（注意指针访问用->）
-    HKVDevice* hkVDevice = static_cast<HKVDevice*>(dwUser);
-    if (hkVDevice == nullptr) {
-        std::cerr << "onHKFrameCallback: invalid HKVDevice pointer!" << std::endl;
-        return;
-    }
-    int channel = -1;
-    Camera* camera = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(hkVDevice->ctxMutex_);
-        //遍历channels_
-        for(const auto& pair : hkVDevice->channels_){
-            if(pair.second.realHandle == lRealHandle){
-                channel = pair.first;
-                camera = pair.second.camera;
-                break;
-            }
-        }
-    }
-    if (channel == -1) {
-        std::cerr << "onHKFrameCallback: no channel found for handle " << lRealHandle << std::endl;
-        return;
-    }
-    // NET_DVR_MakeKeyFrame(hkVDevice->getUserId(),channel);
-    if (!camera) return;
+    auto* ctx  = reinterpret_cast<HKVDevice::ChannelContext*>(pUser);
     
-    if(dwDataType == NET_DVR_STREAMDATA){
-        if(hkVDevice->isIFrame(pBuffer,dwBufSize)){
-
-            camera->firstFrameReceived = true;    // 只要有 I 帧就标记
-
-            camera->onEncodedFrame(pBuffer, dwBufSize); //把这个帧
-            return ;
-        }
-    }
-    int64_t now = av_gettime_relative();
-    if (!camera->firstFrameReceived              // 尚未收到 I 帧
-        && !camera->keyframeRequested            // 还没调用过
-        && now > camera->firstFrameDeadline) {   // 超时 5 秒
-     
-        NET_DVR_MakeKeyFrame(hkVDevice->getUserId(), channel);
-        camera->keyframeRequested = true;  // ⭐只触发一次
+    if (ctx == nullptr || ctx->camera == nullptr) {
+            return;
+    }   
+    
+    if(pstruPackInfo->dwPacketType == 1){
+        // std::cout << "ctx->streamHandle+" << ctx->realHandle << "ctx->camera->channel+" << ctx->camera->getCameraInfo().channel << std::endl;
+        ctx->camera->onEncodedFrame(
+            pstruPackInfo->pPacketBuffer,  // 完整NALU数
+            pstruPackInfo->dwPacketSize   // 完整NALU长度
+        );
+        // dumpPacketBuffer(pstruPackInfo->pPacketBuffer,pstruPackInfo->dwPacketSize,ctx->camera->getCameraInfo().channel,pstruPackInfo->dwPacketType);
     }
 
 }
 
-bool HKVDevice::isIFrame(const uint8_t* data, int len){
-    if (len < 5) return false;
-    // 找起始码 00 00 00 01 或 00 00 01
-    int i = 0;
-    while (i < len - 4) {
-        if (data[i] == 0x00 && data[i+1] == 0x00 &&
-           ((data[i+2] == 0x01) || (data[i+2] == 0x00 && data[i+3] == 0x01))) {
+
+
+bool HKVDevice::queryRecordFiles(int channel,time_t start,time_t end,std::vector<RecordFileMeta>& out) {
+    NET_DVR_TIME s = toHikTime(start);
+    NET_DVR_TIME e = toHikTime(end);
+
+    NET_DVR_FILECOND_V40 cond = {0};
+    cond.lChannel = channel;
+    cond.dwFileType = 0xff;
+    cond.dwIsLocked = 0xff;
+    cond.struStartTime = s;
+    cond.struStopTime  = e;
+
+    LONG handle = NET_DVR_FindFile_V40(userId_, &cond);
+    if (handle < 0) return false;
+
+    NET_DVR_FINDDATA_V40 data;
+    while (true) {
+        int ret = NET_DVR_FindNextFile_V40(handle, &data);
+        if (ret == NET_DVR_FILE_SUCCESS) {
+            RecordFileMeta meta;
+            meta.fileName = data.sFileName;
+            meta.fileSize = data.dwFileSize;
+            meta.startTime = fromHikTime(data.struStartTime);
+            meta.endTime   = fromHikTime(data.struStopTime);
+            out.push_back(meta);
+        } else {
             break;
         }
-        i++;
-    }
-    if (i >= len - 4) return false;
-
-    // 跳过起始码
-    if (data[i+2] == 0x01)
-        i += 3;
-    else
-        i += 4;
-
-    uint8_t nal = data[i];
-
-    // 判断 H.264 / H.265
-    // H.264: NAL = forbidden_zero(1bit) | ref_idc(2bit) | nal_type(5bit)
-    uint8_t nal_type_h264 = nal & 0x1F;
-
-    if (nal_type_h264 > 0 && nal_type_h264 < 32) {
-        // H264
-        return nal_type_h264 == 5;  // IDR 帧（I 帧）
     }
 
-    // H.265: NAL = forbidden_zero(1bit) | nal_type(6bit) | layer(6bit)
-    uint8_t nal_type_h265 = (nal >> 1) & 0x3F;
+    NET_DVR_FindClose_V30(handle);
+    return true;
+}
 
-    // H265 IDR / CRA / BLA 都属于关键帧，最常用的是 19、20
-    if (nal_type_h265 == 19 || nal_type_h265 == 20) {
-        return true;
+bool HikNVR::downloadRecordFile(int channel,const std::string& fileName,const std::string& localPath) {
+    LONG handle = NET_DVR_GetFileByName(
+        userId_,
+        channel,
+        (char*)fileName.c_str(),
+        (char*)localPath.c_str()
+    );
+    if (handle < 0) return false;
+
+    NET_DVR_PlayBackControl_V40(
+        handle, NET_DVR_PLAYSTART, nullptr, 0, nullptr, nullptr
+    );
+
+    while (true) {
+        int pos = NET_DVR_GetDownloadPos(handle);
+        if (pos == 100) break;
+        if (pos < 0) {
+            NET_DVR_StopGetFile(handle);
+            return false;
+        }
+        sleep(1);
     }
 
-    return false;
+    NET_DVR_StopGetFile(handle);
+    return true;
 }
 

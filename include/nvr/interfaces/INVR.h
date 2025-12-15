@@ -1,8 +1,8 @@
 #pragma once
 
 #include <memory>
-#include "data_layer/config_parser.h"
-#include "data_layer/video_data_object.h"
+#include "config_parser.h"
+#include "video_data_object.h"
 class INVR;
 //NVR工厂类：
 class NVRFactory{
@@ -33,4 +33,19 @@ public:
     virtual bool getSDKStatus() = 0;
 
     virtual bool getNVRStatus() = 0;
+
+     // ===== 新增：录像查询 =====
+    virtual bool queryRecordFiles(
+        int channel,
+        time_t start,
+        time_t end,
+        std::vector<RecordFileMeta>& outFiles
+    ) = 0;
+
+    // ===== 新增：录像下载 =====
+    virtual bool downloadRecordFile(
+        int channel,
+        const std::string& fileName,
+        const std::string& localPath
+    ) = 0;
 };

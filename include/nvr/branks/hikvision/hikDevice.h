@@ -1,12 +1,17 @@
 #pragma once
-#include "nvr/interfaces/HCNetSDK.h"//sdk
-#include "nvr/interfaces/INVR.h"
-#include "data_layer/video_data_object.h"
+#include "HCNetSDK.h"//sdk
+#include "INVR.h"
+#include "video_data_object.h"
 #include <cstring>
 #include <map>
 #include <iostream>
 #include <atomic>
 #include <thread>
+#include <filesystem> 
+#include <unordered_map>
+#include <memory>
+#include <iomanip> 
+#include <unistd.h>
 extern "C" {
 #include <libavutil/time.h>
 }
@@ -32,6 +37,10 @@ public:
 
     bool stop(int channel,Camera* camera)override;
 
+    bool queryRecordFiles( int channel,time_t start,time_t end,std::vector<RecordFileMeta>& outFiles);
+    
+    bool downloadRecordFile(int channel,const std::string& fileName,const std::string& localPath);
+
     // bool forceIFrame(int channelId) override; // channel 是否已经 RealPlay
 
     // bool getDeviceInfo(DeviceInfo& info) override;
@@ -41,12 +50,8 @@ public:
     bool getNVRStatus() override {return nvrInited_;}
 private:
     void pullRealPlayLoop(int channel);
-    static void CALLBACK onHKFrameCallback(LONG lRealHandle, DWORD dwDataType, BYTE* pBuffer, DWORD dwBufSize,void *dwUser) ; // SDK回调函数
+    static void CALLBACK onHKFrameCallback(LONG lPreviewHandle, NET_DVR_PACKET_INFO_EX *pstruPackInfo, void *pUser) ; // SDK回调函数
     Camera* findCameraByChannel(int channel);//根据这个channel来进行相关的
-    bool bindCamera(Camera* camera);  // 注册 Camera
-
-    bool isIFrame(const uint8_t* data, int len); //判断I帧    
-    int getUserId();
 private:
     int userId_ = -1;
     bool sdkInited_ = false;   
