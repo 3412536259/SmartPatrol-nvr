@@ -154,8 +154,8 @@ bool ImageProcessor::saveJpegToFile(const std::vector<unsigned char>& jpegData, 
     if (!file.is_open()) {
         std::cerr << "Failed to open file: " << filename << std::endl;
         return false;
-    }
-
+    }   
+    
     file.write(reinterpret_cast<const char*>(jpegData.data()), jpegData.size());
     file.close();
     return true;

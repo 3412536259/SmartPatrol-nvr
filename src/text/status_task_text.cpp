@@ -22,25 +22,16 @@ int main(){
     std::shared_ptr<IDeviceManager> ideviceManager = std::make_shared<DeviceManager>();
     
     JobScheduler scheduler(8, ideviceManager.get());
-    HttpPublisher httpPublisher("http://127.0.0.1:8080/report"); //客服端
-    scheduler.setHttpPublisher(&httpPublisher);
-    // start HTTP service   
-    HTTPCommandController controller(scheduler);
-    WebService webService("127.0.0.1", &controller);
-    if (!webService.start()) {
-        std::cerr << "WebService 启动失败（端口8080可能被占用）" << std::endl;
-        return -1;
-    }
+    MqttCommandDispatcher cmdDispatcher(scheduler);  //根据接收的主题来选择调用的处理任务，需要依赖jobscheduler的接口提交任务
+    MqttService mqtt("mqtt://192.168.31.249:1883", "edge-box", &cmdDispatcher); //需要依赖cmdDispatcher分发相应任务
+    MqttPublisher mqttPublisher(&mqtt);
+    scheduler.setMqttPublisher(&mqttPublisher); //依赖publisher的唯一原因是需要将publisher传入Taskcontext供具体task调用
 
-    // auto model = std::make_unique<AIModelService>(MODELPATH);
-    // AIRecognizer ai(std::move(model),ideviceManager.get());
-    // ai.start();  
 
-    // //定时上报设备状态启动 mqtt
-    // DeviceStatusReporter reporter(ideviceManager.get(),&mqttPublisher);
-    // reporter.startAutoReport(RESULT_GET_ALL_DEVICE_STATUS_TOPIC,15);
+    //定时上报设备状态启动 mqtt
+    DeviceStatusReporter reporter(ideviceManager.get(),&mqttPublisher);
+    reporter.startAutoReport(RESULT_GET_ALL_DEVICE_STATUS_TOPIC,15);
 
-    webService.stop();
     std::cout << "System running..." << std::endl;
     while (true) { std::this_thread::sleep_for(std::chrono::seconds(1)); }
     std::cout << "所有资源已释放，程序正常退出" << std::endl;

@@ -75,4 +75,38 @@ public:
     std::string name() const override { return "GetDeviceStatus";}
     void run(TaskContext& ctx) override;
 };
+
+class GetVideoHistoryTask : public ITask{
+public:
+    GetVideoHistoryTask(std::string camId,std::string nvrId,std::string startTime,std::string endTime):camId_(camId),nvrId_(nvrId),startTime_(startTime),endTime_(endTime){}
+    std::string name() const override { return "GetVideoHistory"; }
+    void run(TaskContext& ctx) override;
+private:
+    std::string camId_;
+    std::string nvrId_;
+    std::string startTime_;
+    std::string endTime_; 
+};
+
+
+class GetVideoHistoryFileTask : public ITask{
+public: 
+     GetVideoHistoryFileTask(std::string camId,std::string nvrId, std::string fileName,std::string startTime,std::string endTime,std::string fileSize):camId_(camId),nvrId_(nvrId),fileName_(fileName),startTime_(startTime),endTime_(endTime),fileSize_(fileSize){}
+    std::string name() const override { return "GetVideoHistoryFile"; }
+    void run(TaskContext& ctx) override;
+private:
+    std::string camId_;
+    std::string nvrId_ ;
+    std::string fileName_;
+    std::string startTime_;
+    std::string endTime_ ;
+    std::string fileSize_;
+}
+
+
+
+
+
+
+
 #endif

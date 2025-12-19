@@ -34,18 +34,11 @@ public:
 
     virtual bool getNVRStatus() = 0;
 
-     // ===== 新增：录像查询 =====
-    virtual bool queryRecordFiles(
-        int channel,
-        time_t start,
-        time_t end,
-        std::vector<RecordFileMeta>& outFiles
-    ) = 0;
-
     // ===== 新增：录像下载 =====
-    virtual bool downloadRecordFile(
-        int channel,
-        const std::string& fileName,
-        const std::string& localPath
-    ) = 0;
+    virtual bool queryRecordFiles(int channel, std::string starttime, std::string endtime, VideoFileInfos& outFiles) = 0;
+
+    virtual bool downloadRecordFile(DownloadVideoFile& info,DownloadFile& out) = 0;
+
+
+    virtual int ReturnDownloadprogress() = 0;
 };

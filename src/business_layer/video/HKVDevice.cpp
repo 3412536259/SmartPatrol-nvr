@@ -35,10 +35,6 @@ bool HKVDevice::initSDK() {
     // 配置OpenSSL通信库路径
     NET_DVR_SetSDKInitCfg(NET_SDK_INIT_CFG_SSLEAY_PATH, (void*)ssleay_path);
 
-    // （可选）设置SDK自身库加载路径（如果HCNetSDK.so在同目录）
-    NET_DVR_LOCAL_SDK_PATH sdk_path = {0};
-    strncpy(sdk_path.sPath, "/home/ztl/workspace/SmartPatrol-nvr/lib/nvr/branks/hikvision/", sizeof(sdk_path.sPath)-1);
-    NET_DVR_SetSDKInitCfg(NET_SDK_INIT_CFG_SDK_PATH, &sdk_path);
 
     // 1. 初始化海康SDK
     if (!NET_DVR_Init()) {
@@ -204,9 +200,209 @@ bool HKVDevice::stop(int channel, Camera* camera){
     return true;
 }
 
+bool HKVDevice::downloadRecordFile(DownloadVideoFile& info,DownloadFile& out) {
+    std::lock_guard<std::mutex> lock(downloadMutex_);
 
+    if (running_download.load()) {
+        std::cerr << "[HKVDevice] Download already running" << std::endl;
+        return false;
+    }
+
+    running_download.store(true);
+    downloadProgress = 0;
+    downloadId_ = -1;
+
+    // 启动下载线程（复制参数，避免外部生命周期问题）
+    downloadThread_ = std::thread(&HKVDevice::downloadWorker,this,info,std::ref(out));
+
+    // 是否 detach 取决于你是否需要 join
+    downloadThread_.detach();
+
+    return true;
+}
+
+
+int HKVDevice::ReturnDownloadprogress(){
+    std::lock_guard<std::mutex> lock(downloadProgress_);
+    {
+        int pos = NET_DVR_GetDownloadPos(downloadId_);
+        if (pos < 0 || pos == 200) {
+            int err = NET_DVR_GetLastError();
+            std::cerr << "[HKVDevice] Download error, err=" << err << std::endl;
+        }
+        downloadProgress = pos;
+    }
+    
+    return downloadProgress;
+}
+
+
+
+bool HKVDevice::queryRecordFiles(int channel, std::string starttime, std::string endtime, VideoFileInfos& outFiles) {
+    // 初始化输出参数
+    outFiles.isSuccess = false;
+    outFiles.errorMsg.clear();
+    outFiles.fileList.clear();
+
+    // 1. 基础校验
+    if (userId_ < 0) {
+        outFiles.errorMsg = "设备未登录，无法查询录像";
+        return false;
+    }
+    if (channel <= 0) {
+        outFiles.errorMsg = "通道号必须为正整数";
+        return false;
+    }
+
+    try {
+        // 2. 转换时间字符串为SDK时间结构体（复用Utils）
+        NET_DVR_TIME lpStartTime = Utils::getNvrTime(starttime);
+        NET_DVR_TIME lpStopTime = Utils::getNvrTime(endtime);
+
+        // 3. 创建查找句柄（核心SDK调用）
+        LONG lFindHandle = NET_DVR_FindFile(
+            userId_,        // 登录句柄
+            channel,          // 通道号
+            0,                // 文件类型：0=所有类型
+            &lpStartTime,     // 开始时间
+            &lpStopTime       // 结束时间
+        );
+
+        // 句柄创建失败处理
+        if (lFindHandle < 0) {
+            int errorCode = NET_DVR_GetLastError();
+            outFiles.errorMsg = "按时间查找录像文件失败，错误码：" + std::to_string(errorCode);
+            std::cerr << "hcsdk " << outFiles.errorMsg << std::endl;
+            // 释放无效句柄（防御性操作）
+            if (lFindHandle >= 0) {
+                NET_DVR_FindClose(lFindHandle);
+            }
+            return false;
+        }
+
+        // 4. 循环遍历所有录像文件（核心查找逻辑）
+        NET_DVR_FINDDATA_V40 lpFindData = {0};
+        bool isFinding = true;
+
+        while (isFinding) {
+            LONG findResult = NET_DVR_FindNextFile_V40(lFindHandle, &lpFindData);
+
+            switch (findResult) {
+                case 1002: // 正在查找，请等待
+                    std::cout << "hcsdk 正在查找文件，请等待..." << std::endl;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    break;
+
+                case 1000: { // 获取文件信息成功
+                    VideoFileInfo fileInfo;
+                    // 复用Utils转换时间格式
+                    fileInfo.starttime = Utils::sdkTimeToStr(lpFindData.struStartTime);
+                    fileInfo.endtime = Utils::sdkTimeToStr(lpFindData.struStopTime);
+                    fileInfo.filename = std::string(lpFindData.sFileName);
+                    fileInfo.filesize = lpFindData.dwFileSize;
+                    // 添加到输出列表
+                    outFiles.fileList.push_back(fileInfo);
+                    break;
+                }
+
+                case 1003: // 没有更多文件，查找结束
+                    std::cout << "hcsdk 没有更多的文件，查找结束" << std::endl;
+                    isFinding = false;
+                    break;
+
+                default: // 其他错误状态
+                    outFiles.errorMsg = "查找文件异常，状态码：" + std::to_string(findResult);
+                    std::cerr << "hcsdk " << outFiles.errorMsg << std::endl;
+                    isFinding = false;
+                    break;
+            }
+        }
+
+        // 5. 释放查找句柄（必须执行，避免资源泄漏）
+        if (lFindHandle >= 0) {
+            NET_DVR_FindClose(lFindHandle);
+            std::cout << "hcsdk 查找句柄已释放" << std::endl;
+        }
+
+        // 6. 查询成功标记
+        outFiles.isSuccess = true;
+        outFiles.errorMsg = "查询成功，共找到" + std::to_string(outFiles.fileList.size()) + "个录像文件";
+        return true;
+
+    } catch (const std::invalid_argument& e) { // 时间格式错误
+        outFiles.errorMsg = "时间格式错误：" + std::string(e.what());
+        std::cerr << "hcsdk " << outFiles.errorMsg << std::endl;
+        return false;
+    } catch (const std::exception& e) { // 其他异常
+        outFiles.errorMsg = "查询失败：" + std::string(e.what());
+        std::cerr << "hcsdk " << outFiles.errorMsg << std::endl;
+        return false;
+    }
+}
 
 // private
+
+void HKVDevice::downloadWorker(const DownloadVideoFile& info, DownloadFile& out){
+
+    char fileName[100] = {0};//小于100字节
+    char savedFilePath[512] = {0}; 
+    out.downloadResult = 0;
+    out.localPath = std::string(savedFilePath);
+    std::string realyFileName = info.cameraId()+ "_" + info.startTime();
+
+    strncpy(fileName, info.fileName().c_str(), sizeof(fileName) - 1);
+    snprintf(
+        savedFilePath,
+        sizeof(savedFilePath),
+        "/home/ztl/workspace/SmartPatrol-nvr/video_file/%s.mp4",
+        realyFileName.c_str()
+    );
+
+    // 1️⃣ 建立下载会话
+    {
+        std::lock_guard<std::mutex> lock(downloadMutex_);
+        downloadId_ = NET_DVR_GetFileByName(userId_, fileName, savedFilePath);
+    }
+
+    if (downloadId_ < 0) {
+        int err = NET_DVR_GetLastError();
+        std::cerr << "[HKVDevice] GetFileByName failed, err=" << err << std::endl;
+        running_download.store(false);
+        out.downloadResult = -1;
+        out.processError = "NET_DVR_GetDownloadPos failed";
+        return;
+    }
+
+    // 2️⃣ 开始下载
+    if (!NET_DVR_PlayBackControl_V40(
+            downloadId_,
+            NET_DVR_PLAYSTART,
+            0,
+            0,
+            nullptr,
+            nullptr)) {
+        int err = NET_DVR_GetLastError();
+        std::cerr << "[HKVDevice] PLAYSTART failed, err=" << err << std::endl;
+        NET_DVR_StopGetFile(downloadId_);
+        running_download.store(false);
+        out.downloadResult = -1;
+        out.processError = "NET_DVR_GetDownloadPos failed";        
+        return;
+    }
+
+    // 4️⃣ 清理资源
+    {
+        std::lock_guard<std::mutex> lock(downloadMutex_);
+        if (downloadId_ >= 0) {
+            NET_DVR_StopGetFile(downloadId_);
+            downloadId_ = -1;
+            out.downloadResult = 1;
+        }
+    }
+    running_download.store(false);
+}
+
+
 void HKVDevice::pullRealPlayLoop(int channel){
     ChannelContext* ctx = nullptr;
     {
@@ -293,64 +489,4 @@ void CALLBACK HKVDevice::onHKFrameCallback(LONG lPreviewHandle, NET_DVR_PACKET_I
 }
 
 
-
-bool HKVDevice::queryRecordFiles(int channel,time_t start,time_t end,std::vector<RecordFileMeta>& out) {
-    NET_DVR_TIME s = toHikTime(start);
-    NET_DVR_TIME e = toHikTime(end);
-
-    NET_DVR_FILECOND_V40 cond = {0};
-    cond.lChannel = channel;
-    cond.dwFileType = 0xff;
-    cond.dwIsLocked = 0xff;
-    cond.struStartTime = s;
-    cond.struStopTime  = e;
-
-    LONG handle = NET_DVR_FindFile_V40(userId_, &cond);
-    if (handle < 0) return false;
-
-    NET_DVR_FINDDATA_V40 data;
-    while (true) {
-        int ret = NET_DVR_FindNextFile_V40(handle, &data);
-        if (ret == NET_DVR_FILE_SUCCESS) {
-            RecordFileMeta meta;
-            meta.fileName = data.sFileName;
-            meta.fileSize = data.dwFileSize;
-            meta.startTime = fromHikTime(data.struStartTime);
-            meta.endTime   = fromHikTime(data.struStopTime);
-            out.push_back(meta);
-        } else {
-            break;
-        }
-    }
-
-    NET_DVR_FindClose_V30(handle);
-    return true;
-}
-
-bool HikNVR::downloadRecordFile(int channel,const std::string& fileName,const std::string& localPath) {
-    LONG handle = NET_DVR_GetFileByName(
-        userId_,
-        channel,
-        (char*)fileName.c_str(),
-        (char*)localPath.c_str()
-    );
-    if (handle < 0) return false;
-
-    NET_DVR_PlayBackControl_V40(
-        handle, NET_DVR_PLAYSTART, nullptr, 0, nullptr, nullptr
-    );
-
-    while (true) {
-        int pos = NET_DVR_GetDownloadPos(handle);
-        if (pos == 100) break;
-        if (pos < 0) {
-            NET_DVR_StopGetFile(handle);
-            return false;
-        }
-        sleep(1);
-    }
-
-    NET_DVR_StopGetFile(handle);
-    return true;
-}
 

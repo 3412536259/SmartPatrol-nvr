@@ -18,11 +18,11 @@ int main(){
     av_log_set_level(AV_LOG_QUIET);
     ConfigParser::getInstance().loadFromFile(CONFIGPATH);
     std::shared_ptr<IDeviceManager> ideviceManager = std::make_shared<DeviceManager>();
-    // JobScheduler scheduler(8, ideviceManager.get());
-    // MqttCommandDispatcher cmdDispatcher(scheduler);  //根据接收的主题来选择调用的处理任务，需要依赖jobscheduler的接口提交任务
-    // MqttService mqtt("mqtt://broker.emqx.io:1883", "edge-box", &cmdDispatcher); //需要依赖cmdDispatcher分发相应任务
-    // MqttPublisher mqttPublisher(&mqtt);
-    // scheduler.setMqttPublisher(&mqttPublisher); //依赖publisher的唯一原因是需要将publisher传入Taskcontext供具体task调用
+    JobScheduler scheduler(8, ideviceManager.get());
+    MqttCommandDispatcher cmdDispatcher(scheduler);  //根据接收的主题来选择调用的处理任务，需要依赖jobscheduler的接口提交任务
+    MqttService mqtt("mqtt://192.168.31.249", "edge-box", &cmdDispatcher); //需要依赖cmdDispatcher分发相应任务
+    MqttPublisher mqttPublisher(&mqtt);
+    scheduler.setMqttPublisher(&mqttPublisher); //依赖publisher的唯一原因是需要将publisher传入Taskcontext供具体task调用
 
 
     while (true) { std::this_thread::sleep_for(std::chrono::seconds(1)); }

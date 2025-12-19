@@ -25,6 +25,8 @@ private:
     void handleGetAllDeviceStatus(const nlohmann::json& j);
     void handleOperatePlcWithVerify(const nlohmann::json& j);
     void handleConfigUpdate(const nlohmann::json& j);
+    void handVideoHistory(const nlohmann::json& j);
+    void handVideoHistoryFile(const nlohmann::json& j)
 };
 
 

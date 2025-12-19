@@ -13,6 +13,10 @@
 #define OPERATE_CAR_TOPIC                      BOX_ID + "/device/carControl"
 #define OPERATE_PLC_WITH_VERIFY_TOPIC          BOX_ID + "/device/plc/operateWithVerify"
 #define UPDATE_CONFIG                          BOX_ID + "/device/config"
+#define GET_VIDEO_HISTORY_TOPIC                BOX_ID + "/device/camera/getVideoHistory"
+#define GET_VIDEO_HISTORY_FILE_TOPIC           BOX_ID + "/device/camera/getVideoHistoryFile"
+
+
 
 #define RESULT_GET_REAL_IMAGE_TOPIC            BOX_ID + "/device/camera/getRealImage/result"
 #define RESULT_OPERATE_PLC_TOPIC               BOX_ID + "/device/plc/operate/result"
@@ -22,5 +26,13 @@
 #define RESULT_OPERATE_CAR_TOPIC               BOX_ID + "/device/carControl/result"
 #define RESULT_OPERATE_PLC_WITH_VERIFY_TOPIC   BOX_ID + "/device/plc/operateWithVerify/result"
 #define RESULT_UPDATE_CONFIG                   BOX_ID + "/device/config/result"
+#define RESULT_VIDEO_HISTORY                   BOX_ID + "/device/camera/getVideoHistory/result"
+#define RESULT_VIDEO_HISTORY_FILE_TOPIC        BOX_ID + "/device/camera/getVideoHistoryFile/result"
+
+
+
+
+
+
 
 #endif // DEVICE_TOPICS_H

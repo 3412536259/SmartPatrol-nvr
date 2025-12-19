@@ -19,6 +19,9 @@ public:
 
     virtual void updateConfig() = 0; //更新配置
 
+    virtual void queryRecordFiles(std::string camId_,std::string startTime_,std::string endTime_,VideoFiles videoFiles);
+
+
 };
 
 

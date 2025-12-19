@@ -27,9 +27,9 @@ public:
 
     virtual bool getAllLastKeyFrames(VideoFrames& out) = 0;
     
-    virtual bool queryRecordFiles(int channel,time_t start,time_t end,std::vector<RecordFileMeta>& outFiles) = 0;
+    virtual bool queryRecordFiles(std::string cameraId,std::string startTime, std::string endTime,VideoFiles& outFiles) = 0;
 
-    virtual bool downloadRecordFile(int channel,const std::string& fileName,const std::string& localPath) = 0;
+    virtual bool downloadRecordFile(DownloadVideoFile& in, DownloadReadyFile& out) = 0;
 };
 
 class VideoService : public IVideoService {
@@ -47,15 +47,17 @@ public:
 
     bool getAllLastKeyFrames(VideoFrames& out) override;
 
-    bool queryRecordFiles(int channel,time_t start,time_t end,std::vector<RecordFileMeta>& outFiles)override;
+    bool queryRecordFiles(std::string cameraId,std::string startTime, std::string endTime,VideoFiles& outFiles)override;
 
-    bool downloadRecordFile(int channel,const std::string& fileName,const std::string& localPath) override;
+    bool downloadRecordFile(DownloadVideoFile& in, DownloadReadyFile& out) override;
 
 private:
     bool addCamera(const CameraInfo& info);   //可能就是有业务需求的要移动走后的摄像头，重新添加到里面
     bool removeCamera(const CameraInfo& info); //可能就是有业务需求的要移动走
     bool registerDevices();// 把摄像头都注册到这个map表里面，而且初始化SDK，还把NVR进行登陆
     void startAllStreams();//启动所有的通道预览流
+    std::string formatFileSize(uint64_t bytes);
+    
 private:
     std::unique_ptr<INVR> nvr_;
     std::map<std::string, std::unique_ptr<Camera>> cameras_;  //摄像头的在线表（通道信息 + 状态 + 缓存帧）”）  通道号来进行

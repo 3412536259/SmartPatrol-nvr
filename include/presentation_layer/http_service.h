@@ -11,7 +11,8 @@
 #include "job_scheduler.h"
 #include "../../lib/json/json.hpp"
 #include "task.h"
-
+#include "nlohmann/json.hpp"
+using nlohmann::json;
 // 前置声明（避免头文件循环依赖）
 class HTTPCommandController;
 class Httpconfig;
@@ -27,7 +28,7 @@ public:
  
      * @param ICommandDispatcher 任务调度接口指针
      */
-    WebService(const std::string httpPath, ICommandDispatcher* dispatcher);
+    WebService(const std::string& httpPath, ICommandDispatcher* dispatcher);
 
     /**
      * @brief 析构函数
@@ -66,8 +67,19 @@ private:
      * @brief 处理单个客户端连接
      * @param client_fd 客户端套接字描述符
      */
-    void handleClient(int client_fd);
+    void handleClient(int client_fd, const char* client_ip, uint16_t client_port);
 
+    std::string parseRequestBody(const std::string& request, size_t content_length, int client_fd);
+
+    size_t parseContentLength(const std::string& request);
+    
+
+    void sendErrorResponse(int client_fd, int status_code, const std::string& message, const json& extra = json{});
+
+    void sendSuccessResponse(int client_fd, const json& response_json);
+
+    std::string getStatusText(int status_code);
+    
     // 成员变量
     std::string m_bind_ip;
     ICommandDispatcher* dispatcher_;      // 控制器实例（处理业务逻辑）                        // 监听端口
@@ -99,6 +111,8 @@ public:
 private:
     JobScheduler& scheduler_;
 
+    
+
     void handleGetRealImage(const nlohmann::json& j);
     void handleGetSensorData(const nlohmann::json& j);
     void handleGetAllDeviceStatus(const nlohmann::json& j);
@@ -107,7 +121,11 @@ private:
 
     void handDownRecordFile(const nlohmann::json& j);
 
+    void handVideoHistory(const nlohmann::json& j);
+    void handVideoHistoryFile(const nlohmann::json& j);
 
+
+    // void
 };
 
 

@@ -4,7 +4,7 @@
 #include "itask_result_publisher.h"
 #include "http_client.h"
 #include "mqtt_service.h"
-// #include <curl/curl.h>
+#include <curl/curl.h>
 class MqttPublisher : public ITaskResultPublisher
 {
 public:
@@ -16,46 +16,57 @@ public:
 private:
     MqttService* mqtt_;
 };
-
+// 构造时指定你的 HTTP 服务器地址，例如：http://127.0.0.1:8080/report
 class HttpPublisher : public ITaskResultPublisher {
 public:
-      // 构造时指定你的 HTTP 服务器地址，例如：http://127.0.0.1:8080/report
     explicit HttpPublisher(const std::string& url)
         : url_(url) 
     {
-        // curl_global_init(CURL_GLOBAL_ALL);
+        curl_global_init(CURL_GLOBAL_ALL);
     }
 
     ~HttpPublisher() {
-        // curl_global_cleanup();
+        curl_global_cleanup();
     }
 
-    // 将 topic 和 message 一起 POST 到你的 http server
     void publish(const std::string& topic,
                  const std::string& message) override 
     {
-        // CURL* curl = curl_easy_init();
-        // if (!curl) return;
+        CURL* curl = curl_easy_init();
+        if (!curl) return;
+        std::string full_url = url_ + "/" + topic;
 
-        // // JSON 格式发送（常见形式）
-        // std::string json = R"({"topic":")" + topic + R"(","message":")" + message + R"("})";
+        printf("【调试】准备发送的JSON数据大小：%lu 字节\n", message.size());
+    
+        // ========== 优化2：设置curl参数（增加超时/错误日志） ==========
+        // 完整URL（已包含路径，无需再拼接）
+        curl_easy_setopt(curl, CURLOPT_URL, full_url.c_str());
+        // POST请求
+        curl_easy_setopt(curl, CURLOPT_POST, 1L);
+        // POST数据（标准JSON）
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, message.c_str());
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, message.size());
+        // 设置JSON请求头
+        struct curl_slist* headers = nullptr;
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+        // 超时时间（避免卡住）
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
+        // 开启错误日志（便于调试）
+        curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 
-        // curl_easy_setopt(curl, CURLOPT_URL, url_.c_str());
-        // curl_easy_setopt(curl, CURLOPT_POST, 1L);
-        // curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json.c_str());
-        // curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, json.size());
+        // 执行POST请求
+        CURLcode res = curl_easy_perform(curl);
+        if (res != CURLE_OK) {
+            // 打印错误信息（调试用）
+            fprintf(stderr, "回调失败：%s\n", curl_easy_strerror(res));
+        } else {
+            printf("回调成功！响应码：%d\n", res);
+        }
 
-        // // 设置 Content-Type: application/json
-        // struct curl_slist* headers = nullptr;
-        // headers = curl_slist_append(headers, "Content-Type: application/json");
-        // curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-
-        // // 执行 POST
-        // CURLcode res = curl_easy_perform(curl);
-
-        // // 清理资源
-        // curl_slist_free_all(headers);
-        // curl_easy_cleanup(curl);
+        // 清理资源
+        curl_slist_free_all(headers);
+        curl_easy_cleanup(curl);
     }
 
 private:

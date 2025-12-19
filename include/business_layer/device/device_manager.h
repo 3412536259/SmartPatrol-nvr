@@ -19,7 +19,7 @@ public:
     void operateCamera() override;
     void operatePlc(const std::string &deviceId, const std::string &cmd) override;
     void updateConfig() override;
-
+    void queryRecordFiles(std::string camId_,std::string startTime_,std::string endTime_,VideoFiles videoFiles) override;
 private:
     std::shared_ptr<IVideoService> videoService_;
     // std::shared_ptr<IPLCManager> plcManager_;

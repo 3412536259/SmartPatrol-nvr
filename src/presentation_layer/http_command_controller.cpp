@@ -1,5 +1,5 @@
 #include "http_service.h"
-
+#include "mqtt_topics.h"
 // ===================== HTTPCommandController 实现 =====================
 // 修复：构造函数初始化scheduler_（需确保JobScheduler是单例/可引用）
 HTTPCommandController::HTTPCommandController(JobScheduler& scheduler)
@@ -10,16 +10,16 @@ void HTTPCommandController::onMessage(const std::string& topic, const std::strin
     try {
         nlohmann::json req_json = nlohmann::json::parse(payload);
         // 根据topic分发到不同的处理函数
-        if (topic == "/device/camera") {
+        if (topic == GET_REAL_IMAGE_TOPIC) {
             handleGetRealImage(req_json);
-
         }else if (topic == "/sensor/data") {
             handleGetSensorData(req_json);
-        } else if (topic == "/device/all/status") {
+        } else if (topic == GET_ALL_DEVICE_STATUS_TOPIC) {
             handleGetAllDeviceStatus(req_json);
-        } else if(topic == "device/camera/queryFile"){
+
+        } else if(topic == GET_VIDEO_HISTORY_TOPIC){
             handleHistoryVideo(payload);
-        } else if(topic == "device/camera/downloadRecordFile"){
+        } else if(topic == GET_VIDEO_HISTORY_FILE_TOPIC){
             handDownRecordFile(payload);
         }else {
             throw std::runtime_error("Unsupported topic: " + topic);
@@ -59,4 +59,32 @@ void HTTPCommandController::handleHistoryVideo(const nlohmann::json& j){
 void HTTPCommandController::handDownRecordFile(const nlohmann::json& j){
 
 }
+
+void HTTPCommandController::handVideoHistory(const nlohmann::json& j){
+    if(!j.contains("deviceId") && !j.contains("nvrId")) return;
+    std::string deviceId = j["deviceId"];
+    std::string nvrId = j["nvrId"];
+    std::string startTime = j["startTime"];//那一日的开始
+    std::string endTime = j["endTime"];//那一日的结束
+    auto task = std::make_shared<GetVideoHistoryTask>(deviceId,nvrId,startTime,endTime);
+    int id = scheduler_.submit(task, "http");
+    std::cout << "handVideoHistory id=" << id 
+              << " for device=" << deviceId << " nvrId=" << nvrId << std::endl;
+}
+
+
+void HTTPCommandController::handVideoHistoryFile(const nlohmann::json& j){
+    if(!j.contains("deviceId") && !j.contains("nvrId") && !j.contains("fileName")) return;
+    std::string deviceId = j["deviceId"];
+    std::string nvrId = j["nvrId"];
+    std::string fileName = j["fileName"];
+    std::string startTime = j["startTime"];//开始时间点
+    std::string endTime = j["endTime"];//结束时间点
+    std::string fileSize = j["fileSize"];
+    auto task = std::make_shared<GetVideoHistoryFileTask>(deviceId,nvrId,fileName,startTime,endTime,fileSize);
+    int id = scheduler_.submit(task, "http");
+    std::cout << "handVideoHistory id=" << id 
+              << " for device=" << deviceId << " nvrId=" << nvrId << std::endl;
+}
+
 

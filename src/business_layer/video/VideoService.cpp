@@ -129,6 +129,7 @@ bool VideoService::viewCameraPreviewStream(const PreviewStream& in,PreviewFrame&
     out.setCameraId(in.getCameraId());
     out.setNvrId(in.getNvrId());
     out.setFrame(frame);
+    out.setIntegrity(true);
     return true;
 }
 
@@ -142,7 +143,8 @@ bool VideoService::getAllLastKeyFrames(VideoFrames& out) {
     for (auto& kv : cameras_) {
         Camera& cam = *kv.second; // 获取摄像头对象引用
         CameraInfo camInfo = cam.getCameraInfo(); // 获取摄像头基础信息
-        if (camInfo.status != CameraStatus::ONLINE) {
+        if (cam.getStatus() != CameraStatus::RUNNING) {
+            std::cout<<"Camera + " <<  camInfo.channel << " status + " << cam.getStatus() << std::endl;
             allFramesOk = false;
             continue;
         }
@@ -163,17 +165,112 @@ bool VideoService::getAllLastKeyFrames(VideoFrames& out) {
         }
     }
     out.setSuccess(allFramesOk);
+    return allFramesOk;
+}
+
+bool VideoService::queryRecordFiles(std::string cameraId,std::string startTime, std::string endTime,VideoFiles& outFiles) {
+    // 加锁保证线程安全
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // 1. 检查NVR实例是否有效
+    if (!nvr_) {
+        outFiles.setErrorMsg("NVR instance is null");
+        outFiles.setSuccess(false);
+        return false;
+    }
+
+    // 2. 检查摄像头ID是否存在
+    auto cameraIt = cameras_.find(cameraId);
+    if (cameraIt == cameras_.end()) {
+        outFiles.setErrorMsg("Camera ID " + cameraId + " not found");
+        outFiles.setSuccess(false);
+        return false;
+    }
+
+    // 3. 清空输出参数，避免脏数据
+    outFiles.clear();
+    outFiles.setSuccess(false);
+    outFiles.setErrorMsg("");
+
+    // 4. 调用NVR接口查询录像文件
+    VideoFileInfos videofiles;
+    videofiles.fileList.clear();
+    int ret = nvr_->queryRecordFiles(
+        cameraIt->second->getCameraInfo().channel, 
+        startTime,
+        endTime, 
+        videofiles
+    );
+
+    // 5. 检查NVR接口调用结果
+    if (ret <= 0 || !videofiles.isSuccess) {
+        std::string errMsg = videofiles.errorMsg.empty() ? "NVR query failed, ret=" + std::to_string(ret) : videofiles.errorMsg;
+        outFiles.setErrorMsg(errMsg);
+        outFiles.setSuccess(false);
+        return false;
+    }
+
+    // 6. 核心转换：将VideoFileInfos转换为VideoFiles
+    int fileId = 1; // 为每个文件分配唯一ID
+    for (const auto& srcFile : videofiles.fileList) {
+        // 转换时间字符串为time_t时间戳
+        std::string startTs = srcFile.starttime;
+        std::string endTs = srcFile.endtime;
+
+        // 构造VideoFile对象
+        VideoFile destFile(
+            fileId++,                  // 分配自增ID
+            srcFile.filename,          // 文件名
+            formatFileSize(srcFile.filesize), // 文件大小（转换为uint64_t）
+            startTs,                   // 开始时间戳
+            endTs                      // 结束时间戳
+        );
+
+        // 添加到输出列表
+        outFiles.addFile(std::move(destFile));
+    }
+
+    // 7. 设置成功状态
+    outFiles.setSuccess(true);
+    outFiles.setErrorMsg("");
+
     return true;
 }
 
-bool VideoService::queryRecordFiles(int channel,time_t start,time_t end,std::vector<RecordFileMeta>& outFiles) {
+bool VideoService::downloadRecordFile(DownloadVideoFile& in, DownloadReadyFile& out) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!nvr_) return false;
-    return nvr_->queryRecordFiles(channel, start, end, outFiles);
+    // 1. 检查NVR实例是否有效
+    if (!nvr_) {
+        // outFiles.setErrorMsg("NVR instance is null");
+        // outFiles.setSuccess(false);
+        return false;
+    }
+
+    // 2. 检查摄像头ID是否存在
+    // auto cameraIt = cameras_.find(cameraId);
+    // if (cameraIt == cameras_.end()) {
+    //     // outFiles.setErrorMsg("Camera ID " + cameraId + " not found");
+    //     // outFiles.setSuccess(false);
+    //     return false;
+    // }
+
+    // nvr_->downloadRecordFile(cameraIt->second->getCameraInfo().channel, fileName, localPath);
+
+    return true;
 }
 
-bool VideoService::downloadRecordFile(int channel,const std::string& fileName,const std::string& localPath) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!nvr_) return false;
-    return nvr_->downloadRecordFile(channel, fileName, localPath);
+std::string VideoService::formatFileSize(uint64_t bytes) {
+    const double KB = 1024.0;
+    const double MB = KB * 1024.0;
+    const double GB = MB * 1024.0;
+
+    if (bytes >= GB) {
+        return std::to_string(bytes / GB).substr(0, 5) + " GB";
+    } else if (bytes >= MB) {
+        return std::to_string(bytes / MB).substr(0, 5) + " MB";
+    } else if (bytes >= KB) {
+        return std::to_string(bytes / KB).substr(0, 5) + " KB";
+    } else {
+        return std::to_string(bytes) + " B";
+    }
 }

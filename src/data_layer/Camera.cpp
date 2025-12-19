@@ -19,7 +19,6 @@ bool Camera::getLastKeyFrame(FrameData& out) {
     out.width = lastKeyFrame_.width;
     out.height = lastKeyFrame_.height;
     out.lastKeyFrameTime = lastKeyFrame_.lastKeyFrameTime;
-
     return true;
 }
 
@@ -135,7 +134,6 @@ bool Camera::initDecoder() {
     // 开启自动检测编码格式
     codecCtx_->flags2 |= AV_CODEC_FLAG2_CHUNKS;
 
-    updateStatus(CameraStatus::ONLINE);
     return true;
 }
 

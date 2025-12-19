@@ -15,25 +15,31 @@ void GetCameraRealImageTask::run(TaskContext& ctx)
         ack["cameraId"] = camId_;
         ctx.publisher->publish(RESULT_GET_REAL_IMAGE_TOPIC, ack.dump());
     }
-    PreviewFrame image = ctx.devMgr->getRealImage(camId_,nvrId_);
-    image_buffer_t out_image;
-    std::vector<unsigned char> outJpeg;
-    if(image.getIntegrity())
-    {
-        ImageProcessor::avframeToRGB(image.getFrame().frame.get(),640,640,&out_image);
-        ImageProcessor::compressToJpeg(&out_image,outJpeg);
-        std::string imageBase64 = ImageProcessor::jpegToBase64(outJpeg);
-        nlohmann::json j;
-        j["nvrId"] = nvrId_;
-        j["cameraId"] =  camId_;
-        j["image"] = imageBase64;
-        ctx.publisher->publish(RESULT_GET_REAL_IMAGE_TOPIC, j.dump());
-    }
-    else{
-        nlohmann::json j;
-        j["code"] = "no image";
-        ctx.publisher->publish(RESULT_GET_REAL_IMAGE_TOPIC, j.dump());
-    }
+    // if(ctx.source == "mqtt"){
+        PreviewFrame image = ctx.devMgr->getRealImage(camId_,nvrId_);
+        image_buffer_t out_image;
+        std::vector<unsigned char> outJpeg;
+        std::cout<< "[task] " << image.getIntegrity() <<std::endl;
+        if(image.getIntegrity())
+        {
+            ImageProcessor::avframeToRGB(image.getFrame().frame.get(),640,640,&out_image);
+            ImageProcessor::compressToJpeg(&out_image,outJpeg);
+            std::string imageBase64 = ImageProcessor::jpegToBase64(outJpeg);
+            nlohmann::json j;
+            j["cameraId"] =  camId_;
+            j["nvrId"] = nvrId_;
+            j["image"] = imageBase64;
+            ctx.publisher->publish(RESULT_GET_REAL_IMAGE_TOPIC, j.dump());
+        }
+        else{
+            nlohmann::json j;
+            j["code"] = "no image";
+            ctx.publisher->publish(RESULT_GET_REAL_IMAGE_TOPIC, j.dump());
+        }
+    // }else if(ctx.source == "htpp"){
+        //
+    // }
+    
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
 }
@@ -238,3 +244,56 @@ void CarControlTask::publishResult(ITaskResultPublisher* publisher, const nlohma
         publisher->publish("device/carcontrol/result", result.dump());
     }
 }
+
+void GetVideoHistoryTask::run(TaskContext& ctx){
+    {
+        nlohmann::json ack;
+        ack["success"] = true;
+        ack["nvrId"] = nvrId_;
+        ack["cameraId"] = camId_;
+        ctx.publisher->publish(GET_VIDEO_HISTORY_TOPIC, ack.dump());
+    }
+    VideoFiles videoFiles;
+    ctx.devMgr->queryRecordFiles(camId_,startTime_,endTime_,videoFiles);
+    if(videoFiles.isSuccess() <=0){
+        nlohmann::json j;
+        j["cameraId"] =  camId_;
+        j["nvrId"] = nvrId_;
+        j["errorMsg"] = videoFiles.getErrorMsg();
+        ctx.publisher->publish(RESULT_GET_REAL_IMAGE_TOPIC, j.dump());
+    }
+    else{
+        nlohmann::json j;
+        j["cameraId"] =  camId_;
+        j["nvrId"] = nvrId_;
+        nlohmann::json videoHistoryFiles;
+        for (size_t i = 0; i < videoFiles.size(); ++i) {
+            // 获取当前文件对象
+            const VideoFile& file = videoFiles.getFiles()[i];
+
+            // 构造单个文件的JSON对象
+            nlohmann::json fileJson;
+            fileJson["fileId"] = file.getId();                // 文件ID
+            fileJson["fileName"] = file.getFileName();        // 文件名（含路径）
+            fileJson["fileSize"] = file.getFileSize();        // 文件大小（字节，原始值）
+            fileJson["startTimeStamp"] = file.getStartTimeStr();   // 开始时间字符串（yyyy-MM-dd HH:mm:ss）
+            fileJson["endTimeStamp"] = file.getEndTimeStr();       // 结束时间字符串
+            // 将单个文件添加到数组中
+            videoHistoryFiles.push_back(fileJson);
+        }
+        j["videoHistoryFiles"] = videoHistoryFiles;
+         j["fileCount"] = videoFiles.size();
+        ctx.publisher->publish(RESULT_GET_REAL_IMAGE_TOPIC, j.dump());
+    }
+}
+
+
+void GetVideoHistoryFileTask::run(TaskContext& ctx){
+    
+}
+
+
+
+
+
+

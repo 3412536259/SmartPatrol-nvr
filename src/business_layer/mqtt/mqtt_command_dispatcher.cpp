@@ -42,6 +42,13 @@ void MqttCommandDispatcher::onMessage(const std::string& topic, const std::strin
     else if(topic == UPDATE_CONFIG){
         handleConfigUpdate(j);
     }
+    else if(topic == GET_VIDEO_HISTORY_TOPIC ){
+        handVideoHistory(j);
+    }
+    else if(topic == GET_VIDEO_HISTORY_FILE_TOPIC){
+        handVideoHistoryFile(j);
+    }
+
     else {
         std::cout << "Unknown topic: " << topic << std::endl;
     }
@@ -153,4 +160,21 @@ void MqttCommandDispatcher::handleConfigUpdate(const nlohmann::json& j){
     // int id = scheduler_.submit(task, "mqtt");
 
     // std::cout<<"Submitted UpdateConfigTask id=" <<id<<std::endl;
+}
+
+
+void MqttCommandDispatcher::handVideoHistory(const nlohmann::json& j){
+    if(!j.contains("deviceId") && !j.contains("nvrId")) return;
+    std::string deviceId = j["deviceId"];
+    std::string nvrId = j["nvrId"];
+    std::string startTime = j["startTime"];
+    std::string endTime = j["endTime"];
+    auto task = std::make_shared<GetVideoHistoryTask>(deviceId,nvrId,startTime,endTime);
+    int id = scheduler_.submit(task, "mqtt");
+    std::cout << "handVideoHistory id=" << id 
+              << " for device=" << deviceId << " nvrId=" << nvrId << std::endl;
+}
+
+void MqttCommandDispatcher::handVideoHistoryFile(const nlohmann::json& j){
+
 }

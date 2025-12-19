@@ -40,7 +40,7 @@ VideoDerviceStatusInfo DeviceManager::getStatus() {
     return status;
 }
 
-// 获取所有摄像头实时帧（解码后的RGB/YUV帧）
+// 获取所有摄像头实时帧（解码后的YUV帧）
 VideoFrames DeviceManager::getAllRealImage() {
 
     VideoFrames frames;
@@ -86,6 +86,7 @@ PreviewFrame DeviceManager::getRealImage(const std::string& camId, const std::st
         std::cout << "[DeviceManager] Get frame success - Cam: " << camId
                   << ", Resolution: " << frameData.width << "x" << frameData.height
                   << ", Timestamp: " << frameData.lastKeyFrameTime << std::endl;
+        // std::cout<< "[DeviceManager] " << frame.getIntegrity() <<std::endl;          
     } else {
         std::cerr << "[DeviceManager] Frame data is invalid for cam: " << camId << std::endl;
     }
@@ -131,4 +132,15 @@ void DeviceManager::operatePlc(const std::string& deviceId, const std::string& c
 
 // 更新配置（重启VideoService加载新配置）
 void DeviceManager::updateConfig() {
+}
+
+
+
+void DeviceManager::queryRecordFiles(std::string camId_,std::string startTime_,std::string endTime_,VideoFiles videoFiles){
+    if (!videoService_) {
+        std::cerr << "[DeviceManager] VideoService is null, return empty frames" << std::endl;
+        videoFiles.clear();
+        return;
+    }
+    videoService_->queryRecordFiles(camId_,startTime_,endTime_,videoFiles);
 }
